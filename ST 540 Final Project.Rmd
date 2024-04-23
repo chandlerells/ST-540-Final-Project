@@ -1,0 +1,255 @@
+---
+title: "ST 540 Final Project"
+author: "Chandler Ellsworth"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(readxl)
+library(tidyverse)
+library(rjags)
+```
+
+```{r}
+#read in data
+(turtles <- read_excel("Turtles3 - Remove missing date-response.xlsx") %>% 
+   select(-c(Name, `ID number`, `City Found`, `County Found`, `Presenting Problem`, `Problem List`)))
+```
+
+# Model Fit Using dcat()
+```{r}
+#breakout data components for JAGS
+X <- turtles[, 9:15]
+Y <- as.numeric(factor(turtles$`Ending disposition`))
+Y1 <- as.numeric(turtles$`Ending disposition` == "Death")
+Y2 <- as.numeric(turtles$`Ending disposition` == "Euthanized")
+Y3 <- as.numeric(turtles$`Ending disposition` == "Released")
+n <- length(Y)
+n_ <- length(X)
+```
+
+```{r}
+#store data for JAGS
+data <- list(Y = Y, X = X, n = n, n_ = n_)
+#define the model   
+model_string <- textConnection("model{
+
+  # Likelihood
+  for(i in 1:n) {
+    Y[i] ~ dcat(p[i, ])
+    denom[i] <- 1 + exp(alpha1 + inprod(X[i,], beta[])) + exp(alpha2 + inprod(X[i,], gamma[])) 
+    p[i, 1] <- 1 / denom[i]
+    p[i, 2] <- exp(alpha1 + inprod(X[i,], beta[])) / denom[i]
+    p[i, 3] <- exp(alpha2 + inprod(X[i,], gamma[])) / denom[i]
+    Y1[i] ~ dcat(p[i, ])
+  }
+  
+  # Priors
+  for(j in 1:n_){
+    beta[j] ~ dnorm(0,100)
+    gamma[j] ~ dnorm(0,100)
+  }
+  alpha1 ~ dnorm(0,0.001)
+  alpha2 ~ dnorm(0,0.001)
+  
+  }")
+#load the data and compile the MCMC code
+model <- jags.model(model_string, data = data, n.chains = 1, quiet = TRUE)
+#burn in for samples
+update(model, 50, progress.bar = "none")
+#Generate post-burn-in samples and retain parameters of interest c("p1", "p2", "p3")
+samples <- coda.samples(model, variable.names = c("Y1"), n.iter = 100, progress.bar = "none")
+```
+
+```{r}
+#check convergence
+effectiveSize(samples)
+summary(samples)
+```
+
+# Accuracy as Performance Metric
+```{r}
+#store predictions and find category classified the most in PPD for each prediction
+preds <- apply(samples[[1]], MARGIN = 2, FUN = function(x){
+  as.numeric(names(table(x))[which.max(table(x))])
+})
+#calculate accuracy as performance metric
+(accuracy <- mean(Y == preds))
+#see how model compares to benchmark that classifies everything as the majority class
+majority <- as.numeric(names(table(Y))[which.max(table(Y))])
+(baseline <- mean(Y == rep(majority, length(Y))))
+```
+
+
+# Random problem I created to give example
+```{r}
+#set seed
+set.seed(230)
+#create random data
+x1 <- rnorm(1000)
+x2 <- rnorm(1000)
+x3 <- rnorm(1000)
+X <- matrix(c(x1,x2,x3), 1000,3)
+Y <- sample(c(1:3), 1000, replace = TRUE)
+n <- length((Y))
+#store binary for each category
+Y1 <- as.numeric(Y == 1)
+Y2 <- as.numeric(Y == 2)
+Y3 <- as.numeric(Y == 3)
+
+data1 <- list(Y1 = Y1, X = X, n = n)
+
+#define the model   
+model_string1 <- textConnection("model{
+  #Likelihood
+  for (i in 1:n) {
+    Y1[i] ~ dbern(p[i])
+    logit(p[i]) <- alpha + inprod(X[i,],beta[])
+  }
+  
+  #Prediction
+  for (i in 1:n) {
+    Y[i] ~ dbern(p[i])
+    #logit(p1[i]) <- alpha + inprod(X[i,],beta[])
+  }
+  
+  # Priors
+  for(j in 1:3){
+    beta[j] ~ dnorm(0,0.001)
+  }
+  alpha ~ dnorm(0,0.001)
+  
+  }")
+#load the data and compile the MCMC code
+model1 <- jags.model(model_string1, data = data1, n.chains = 2, quiet = TRUE)
+#burn in for samples
+update(model1, 1000, progress.bar = "none")
+#Generate post-burn-in samples and retain parameters of interest
+samples1 <- coda.samples(model1, variable.names = c("Y", "beta"), thin = 5, n.iter = 3000, progress.bar = "none")
+
+
+data2 <- list(Y2 = Y2, X = X, n = n)
+
+#define the model   
+model_string2 <- textConnection("model{
+  #Likelihood
+  for (i in 1:n) {
+    Y2[i] ~ dbern(p[i])
+    logit(p[i]) <- alpha + inprod(X[i,],beta[])
+  }
+  
+  #Prediction
+  for (i in 1:n) {
+    Y[i] ~ dbern(p[i])
+    #logit(p1[i]) <- alpha + inprod(X[i,],beta[])
+  }
+  
+  # Priors
+  for(j in 1:3){
+    beta[j] ~ dnorm(0,0.001)
+  }
+  alpha ~ dnorm(0,0.001)
+  
+  }")
+#load the data and compile the MCMC code
+model2 <- jags.model(model_string2, data = data2, n.chains = 2, quiet = TRUE)
+#burn in for samples
+update(model2, 1000, progress.bar = "none")
+#Generate post-burn-in samples and retain parameters of interest
+samples2 <- coda.samples(model2, variable.names = c("Y", "beta"), thin = 5, n.iter = 3000, progress.bar = "none")
+
+data3 <- list(Y3 = Y3, X = X, n = n)
+
+#define the model   
+model_string3 <- textConnection("model{
+  #Likelihood
+  for (i in 1:n) {
+    Y3[i] ~ dbern(p[i])
+    logit(p[i]) <- alpha + inprod(X[i,],beta[])
+  }
+  
+  #Prediction
+  for (i in 1:n) {
+    Y[i] ~ dbern(p[i])
+    #logit(p1[i]) <- alpha + inprod(X[i,],beta[])
+  }
+  
+  # Priors
+  for(j in 1:3){
+    beta[j] ~ dnorm(0,0.001)
+  }
+  alpha ~ dnorm(0,0.001)
+  
+  }")
+#load the data and compile the MCMC code
+model3 <- jags.model(model_string3, data = data3, n.chains = 2, quiet = TRUE)
+#burn in for samples
+update(model3, 1000, progress.bar = "none")
+#Generate post-burn-in samples and retain parameters of interest
+samples3 <- coda.samples(model3, variable.names = c("Y", "beta"), thin = 5, n.iter = 3000, progress.bar = "none")
+
+#find mean for each prediction
+samps1 <- colMeans(samples1[[1]][, 1:n])
+samps2 <- colMeans(samples2[[1]][, 1:n])
+samps3 <- colMeans(samples3[[1]][, 1:n])
+#store means from 4 models in df
+df <- data.frame(samps1, samps2, samps3)
+#find the column with the maximum mean
+max_column <- colnames(df)[max.col(df, "first")]
+#classify based on column that had maximum mean
+pred <- if_else(max_column == "samps1", 1,
+                if_else(max_column == "samps2", 2, 3))
+#compare
+data.frame(Y, pred)
+```
+
+
+# Trying to figure out workaround besides dcat or dmulti to improve computation speed
+```{r}
+#store data for JAGS
+data <- list(Y = Y, X = X, n = n, n_ = n_)
+#define the model   
+model_string <- textConnection("model{
+
+  # Likelihood
+  for(i in 1:n) {
+    Y1[i] ~ dbern(p1[i])
+    Y2[i] ~ dbern(p2[i])
+    
+    p1[i] <- exp(alpha1 + inprod(X[i,],beta[])) / (1 + exp(alpha1 + inprod(X[i,],beta[])))
+    p2[i] <- (1 - p1[i]) * (exp(alpha2 + inprod(X[i,],gamma[])) / (1 + exp(alpha2 + inprod(X[i,],gamma[]))))
+    p3[i] <- 1 - (p1[i] + p2[i])
+  
+    #logit(p1[i]) <- alpha1 + inprod(X[i,],beta[])
+    #logit(p2[i]) <- alpha2 + inprod(X[i,],gamma[])
+  }
+  
+  # Priors
+  for(j in 1:n_){
+    beta[j] ~ dnorm(0,100)
+    gamma[j] ~ dnorm(0,100)
+  }
+  alpha1 ~ dnorm(0,0.001)
+  alpha2 ~ dnorm(0,0.001)
+ 
+  }")
+#load the data and compile the MCMC code
+model <- jags.model(model_string, data = data, n.chains = 1, quiet = TRUE)
+#burn in for samples
+update(model, 5, progress.bar = "none")
+#Generate post-burn-in samples and retain parameters of interest c("p1", "p2", "p3")
+samples <- coda.samples(model, variable.names = c("p1", "p2", "p3"), n.iter = 10, progress.bar = "none")
+
+samples[, 1:2]
+samples[, 1924:1925]
+samples[, 3847:3848]
+```
+
+
+
+
+
+
+
