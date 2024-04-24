@@ -10,27 +10,259 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 library(readxl)
 library(tidyverse)
 library(rjags)
+library(caret)
 ```
 
 ```{r}
 #read in data
-(turtles <- read_excel("Turtles3 - Remove missing date-response.xlsx") %>% 
-   select(-c(Name, `ID number`, `City Found`, `County Found`, `Presenting Problem`, `Problem List`)))
+turtles1 <- read_excel("Turtles3 - Remove missing date-response.xlsx") %>% 
+   select(`Ending disposition`, Abscess, `Coeolomic Breach`, Extremity, Eye, Head, Neurologic, Respiratory, Shell)
+turtles2 <- read_excel("Turtles3 - Remove missing date-response.xlsx") %>% 
+   select(`Ending disposition`, Abscess, HBC, Infection, `Other Trauma`, `Unknown Fracture`)
+turtles3 <- read_excel("Turtles3 - Remove missing date-response.xlsx") %>% 
+   select(`Ending disposition`, Abscess, Infection, Trauma)
 ```
 
 # Model Fit Using dcat()
 ```{r}
+# Set the seed for reproducibility
+set.seed(123)
+# Create a vector containing the row indices for the training sets
+train_indices1 <- createDataPartition(turtles1$`Ending disposition`, p = 0.8, list = FALSE)
+train_indices2 <- createDataPartition(turtles2$`Ending disposition`, p = 0.8, list = FALSE)
+train_indices3 <- createDataPartition(turtles3$`Ending disposition`, p = 0.8, list = FALSE)
+# Create the training sets
+train_data1 <- turtles1[train_indices1, ] %>% mutate(index = c(rep(1, (length(train_indices1)/5)),
+                                                               rep(2,(length(train_indices1)/5)), 
+                                                               rep(3, (length(train_indices1)/5)), 
+                                                               rep(4, (length(train_indices1)/5)), 
+                                                               rep(5, (length(train_indices1)/5))))
+train_data2 <- turtles2[train_indices2, ] %>% mutate(index = c(rep(1, (length(train_indices2)/5)),
+                                                               rep(2,(length(train_indices2)/5)), 
+                                                               rep(3, (length(train_indices2)/5)), 
+                                                               rep(4, (length(train_indices2)/5)), 
+                                                               rep(5, (length(train_indices2)/5))))
+train_data3 <- turtles3[train_indices3, ] %>% mutate(index = c(rep(1, (length(train_indices3)/5)),
+                                                               rep(2,(length(train_indices3)/5)), 
+                                                               rep(3, (length(train_indices3)/5)), 
+                                                               rep(4, (length(train_indices3)/5)), 
+                                                               rep(5, (length(train_indices3)/5))))
+
+Y_train1 <- as.numeric(factor(train_data1$`Ending disposition`))
+Y_train2 <- as.numeric(factor(train_data2$`Ending disposition`))
+Y_train3 <- as.numeric(factor(train_data3$`Ending disposition`))
+
+n_train1 <- length(Y_train1)
+n_train2 <- length(Y_train2)
+n_train3 <- length(Y_train3)
+
+N_train1 <- length(X_train1)
+N_train2 <- length(X_train2)
+N_train3 <- length(X_train3)
+
+# Create the testing sets
+test_data1 <- turtles1[-train_indices1, ]
+test_data2 <- turtles2[-train_indices2, ]
+test_data3 <- turtles3[-train_indices3, ]
+
+X_test1 <- test_data1 %>% select(-`Ending disposition`)
+X_test2 <- test_data2 %>% select(-`Ending disposition`)
+X_test3 <- test_data3 %>% select(-`Ending disposition`)
+
+Y_test1 <- as.numeric(factor(test_data1$`Ending disposition`))
+Y_test1 <- as.numeric(factor(test_data2$`Ending disposition`))
+Y_test1 <- as.numeric(factor(test_data3$`Ending disposition`))
+
+n_test1 <- length(Y_test1)
+n_test2 <- length(Y_test2)
+n_test3 <- length(Y_test3)
+
+N_test1 <- length(X_test1)
+N_test2 <- length(X_test2)
+N_test3 <- length(X_test3)
+
 #breakout data components for JAGS
-X <- turtles[, 9:15]
-Y <- as.numeric(factor(turtles$`Ending disposition`))
-Y1 <- as.numeric(turtles$`Ending disposition` == "Death")
-Y2 <- as.numeric(turtles$`Ending disposition` == "Euthanized")
-Y3 <- as.numeric(turtles$`Ending disposition` == "Released")
-n <- length(Y)
-n_ <- length(X)
+#X1 <- turtles1 %>% select(-`Ending disposition`)
+#Y <- as.numeric(factor(turtles$`Ending disposition`))
+#Y1 <- as.numeric(turtles$`Ending disposition` == "Death")
+#Y2 <- as.numeric(turtles$`Ending disposition` == "Euthanized")
+#Y3 <- as.numeric(turtles$`Ending disposition` == "Released")
+#n <- length(Y)
+#n_ <- length(X)
 ```
 
+
+# Cross Validation
 ```{r}
+
+#create index column to use for cross validation
+X_train1_cv <- X_train1
+X_train2_cv <- X_train2 %>% mutate(index = c(rep(1, (n_train2/5)), rep(2, (n_train2/5)), 
+                                             rep(3, (n_train2/5)), rep(4, (n_train2/5)), rep(5, (n_train2/5))))
+X_train3_cv <- X_train3 %>% mutate(index = c(rep(1, (n_train3/5)), rep(2, (n_train3/5)), 
+                                             rep(3, (n_train3/5)), rep(4, (n_train3/5)), rep(5, (n_train3/5))))
+#create empty lists to store posterior means for each prediction from each model and quantiles for mod1
+list1 <- list()
+list2 <- list()
+list3 <- list()
+list4 <- list()
+
+#create loop for cross validation where each time through the loop, the models are fit on the folds 
+#not equal to the current index value and predictions are made on the fold equal to the current index value
+for(i in 1:5){
+  #store proper predictor data for model fitting and prediction
+  X_train1_train <- train_data1[train_data1$index != i, ] %>% select(-`Ending disposition`)
+  X_train1_test <- train_data1[train_data1$index == i, ] %>% select(-`Ending disposition`)
+
+  X1_ <- train_[train_$index != i, ] %>% select(HWRF)
+  X2_ <- train_[train_$index == i, ] %>% select(HWRF)
+  #store proper response data for model fitting and prediction
+  Y1 <- train_[train_$index != i, 19]
+  Y2 <- train_[train_$index == i, 19]
+  Y3 <- log(Y1)
+  #store appropriate lengths and number of predictors
+  n1 <- length(Y1)
+  n2 <- length(Y2)
+  p1 <- ncol(X1)
+  p2 <- ncol(B1)
+  
+  #store data for JAGS
+  data1   <- list(Y1 = Y1, X1 = X1, X2 = X2, n1 = n1, n2 = n2, p1 = p1)
+  #define the model
+  model_string1 <- textConnection("model{
+                                  
+   # Likelihood
+    for(i in 1:n1){
+      Y1[i] ~ dnorm(muo[i], taue)
+      muo[i] <- alpha + inprod(X1[i,], beta[])
+    }
+    # Prediction
+    for(i in 1:n2){
+      Y2[i] ~ dnorm(mup[i], taue)
+      mup[i] <- alpha + inprod(X2[i,], beta[])
+   }
+   # Priors
+    for(j in 1:p1){
+      beta[j] ~ dnorm(0,0.001)
+    }
+    alpha ~ dnorm(0,0.001)
+    taue  ~ dgamma(0.1, 0.1)
+   }")
+  #load the data and compile the MCMC code
+  model1 <- jags.model(model_string1, data = data1, n.chains = 1, quiet = TRUE)
+  #burn in for samples
+  update(model1, 10000, progress.bar = "none")
+  #Generate post-burn-in samples and retain parameters of interest
+  samples1 <- coda.samples(model1, variable.names = c("Y2", "beta"), thin = 5, n.iter = 30000, progress.bar = "none")[[1]]
+  #store PPD samples for each prediction
+  m1.Y2.samps <- samples1[,1:n2] 
+  #store PPD mean of the samples for each prediction
+  m1.Y2.mn <- colMeans(m1.Y2.samps)
+  #calculate lower quantile of each PPD
+  lower_q <- apply(samples1[,1:n2], 2, FUN = function(x) {
+  quantile(x, probs = 0.025)
+  })
+  #calculate upper quantile of each PPD
+  upper_q <- apply(samples1[,1:n2], 2, FUN = function(x) {
+  quantile(x, probs = 0.975)
+  })
+  #add mean prediction values to list outside loop
+  list1 <- append(list1, list(m1.Y2.mn))
+  list4 <- append(list4, list(lower_q, upper_q))
+  #store data for JAGS
+  data2   <- list(Y1 = Y1, B1 = B1, B1_ = B1_, B2 = B2, B2_ = B2_, X1_ = X1_, X2_ = X2_, n1 = n1, n2 = n2, p2 = p2)
+  #define the model
+  model_string2 <- textConnection("model{
+                                  
+   # Likelihood
+    for(i in 1:n1){
+      Y1[i] ~ dnorm(muo[i], taue)
+      muo[i] <- alpha + inprod(B1[i,], beta[]) + inprod(B2[i,], tao[]) + X1_[i,]*gamma1
+    }
+    # Prediction
+    for(i in 1:n2){
+      Y2[i] ~ dnorm(mup[i], taue)
+      mup[i] <- alpha + inprod(B1_[i,], beta[]) + inprod(B2_[i,], tao[]) + X2_[i,]*gamma1
+   }
+   # Priors
+    for(j in 1:p2){
+      beta[j] ~ dnorm(0,0.001)
+      tao[j] ~ dnorm(0,0.001)
+      kappa[j] ~ dnorm(0,0.001)
+    }
+    gamma1 ~ dnorm(0,0.001)
+    alpha ~ dnorm(0,0.001)
+    taue  ~ dgamma(0.1, 0.1)
+   }")
+  #load the data and compile the MCMC code
+  model2 <- jags.model(model_string2, data = data2, n.chains = 1, quiet = TRUE)
+  #burn in for samples
+  update(model2, 10000, progress.bar = "none")
+  #Generate post-burn-in samples and retain parameters of interest
+  samples2 <- coda.samples(model2, variable.names = c("Y2", "tao", "beta", "gamma1"), thin = 5, n.iter = 50000, progress.bar = "none")[[1]]
+  #store PPD samples for each prediction
+  m2.Y2.samps <- samples2[,1:n2] 
+  #store PPD mean of the samples for each prediction
+  m2.Y2.mn <- colMeans(m2.Y2.samps)
+  #add mean prediction values to list outside loop
+  list2 <- append(list2, list(m2.Y2.mn))
+  
+  #store data for JAGS
+  data3   <- list(Y3 = Y3, X1 = X1, X2 = X2, n1 = n1, n2 = n2, p1 = p1)
+  #define the model  
+  model_string3 <- textConnection("model{
+                                  
+   # Likelihood
+    for(i in 1:n1){
+      Y3[i] ~ dnorm(muo[i], taue)
+      muo[i] <- alpha + inprod(X1[i,], beta[])
+    }
+    # Prediction
+    for(i in 1:n2){
+      Y2[i] ~ dnorm(mup[i], taue)
+      mup[i] <- alpha + inprod(X2[i,], beta[])
+   }
+   # Priors
+    for(j in 1:p1){
+      beta[j] ~ dnorm(0,0.001)
+    }
+    alpha ~ dnorm(0,0.001)
+    taue  ~ dgamma(0.1, 0.1)
+   }")
+  #load the data and compile the MCMC code
+  model3 <- jags.model(model_string3, data = data3, n.chains = 1, quiet = TRUE)
+  #burn in for samples
+  update(model3, 10000, progress.bar = "none")
+  #Generate post-burn-in samples and retain parameters of interest
+  samples3 <- coda.samples(model3, variable.names = c("Y2", "beta"), thin = 5, n.iter = 30000, progress.bar = "none")[[1]]
+  #store PPD samples for each prediction
+  m3.Y2.samps <- samples3[,1:n2] 
+  #store PPD mean of the samples for each prediction
+  m3.Y2.mn <- colMeans(m3.Y2.samps)
+  #add mean prediction values to list outside loop
+  list3 <- append(list3, list(m3.Y2.mn))
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #store data for JAGS
 data <- list(Y = Y, X = X, n = n, n_ = n_)
 #define the model   
@@ -48,11 +280,11 @@ model_string <- textConnection("model{
   
   # Priors
   for(j in 1:n_){
-    beta[j] ~ dnorm(0,100)
-    gamma[j] ~ dnorm(0,100)
+    beta[j] ~ dnorm(0, 100)
+    gamma[j] ~ dnorm(0, 100)
   }
-  alpha1 ~ dnorm(0,0.001)
-  alpha2 ~ dnorm(0,0.001)
+  alpha1 ~ dnorm(0, 100)
+  alpha2 ~ dnorm(0, 100)
   
   }")
 #load the data and compile the MCMC code
@@ -83,146 +315,60 @@ majority <- as.numeric(names(table(Y))[which.max(table(Y))])
 ```
 
 
-# Random problem I created to give example
-```{r}
-#set seed
-set.seed(230)
-#create random data
-x1 <- rnorm(1000)
-x2 <- rnorm(1000)
-x3 <- rnorm(1000)
-X <- matrix(c(x1,x2,x3), 1000,3)
-Y <- sample(c(1:3), 1000, replace = TRUE)
-n <- length((Y))
-#store binary for each category
-Y1 <- as.numeric(Y == 1)
-Y2 <- as.numeric(Y == 2)
-Y3 <- as.numeric(Y == 3)
 
-data1 <- list(Y1 = Y1, X = X, n = n)
-
-#define the model   
-model_string1 <- textConnection("model{
-  #Likelihood
-  for (i in 1:n) {
-    Y1[i] ~ dbern(p[i])
-    logit(p[i]) <- alpha + inprod(X[i,],beta[])
-  }
-  
-  #Prediction
-  for (i in 1:n) {
-    Y[i] ~ dbern(p[i])
-    #logit(p1[i]) <- alpha + inprod(X[i,],beta[])
-  }
-  
-  # Priors
-  for(j in 1:3){
-    beta[j] ~ dnorm(0,0.001)
-  }
-  alpha ~ dnorm(0,0.001)
-  
-  }")
-#load the data and compile the MCMC code
-model1 <- jags.model(model_string1, data = data1, n.chains = 2, quiet = TRUE)
-#burn in for samples
-update(model1, 1000, progress.bar = "none")
-#Generate post-burn-in samples and retain parameters of interest
-samples1 <- coda.samples(model1, variable.names = c("Y", "beta"), thin = 5, n.iter = 3000, progress.bar = "none")
-
-
-data2 <- list(Y2 = Y2, X = X, n = n)
-
-#define the model   
-model_string2 <- textConnection("model{
-  #Likelihood
-  for (i in 1:n) {
-    Y2[i] ~ dbern(p[i])
-    logit(p[i]) <- alpha + inprod(X[i,],beta[])
-  }
-  
-  #Prediction
-  for (i in 1:n) {
-    Y[i] ~ dbern(p[i])
-    #logit(p1[i]) <- alpha + inprod(X[i,],beta[])
-  }
-  
-  # Priors
-  for(j in 1:3){
-    beta[j] ~ dnorm(0,0.001)
-  }
-  alpha ~ dnorm(0,0.001)
-  
-  }")
-#load the data and compile the MCMC code
-model2 <- jags.model(model_string2, data = data2, n.chains = 2, quiet = TRUE)
-#burn in for samples
-update(model2, 1000, progress.bar = "none")
-#Generate post-burn-in samples and retain parameters of interest
-samples2 <- coda.samples(model2, variable.names = c("Y", "beta"), thin = 5, n.iter = 3000, progress.bar = "none")
-
-data3 <- list(Y3 = Y3, X = X, n = n)
-
-#define the model   
-model_string3 <- textConnection("model{
-  #Likelihood
-  for (i in 1:n) {
-    Y3[i] ~ dbern(p[i])
-    logit(p[i]) <- alpha + inprod(X[i,],beta[])
-  }
-  
-  #Prediction
-  for (i in 1:n) {
-    Y[i] ~ dbern(p[i])
-    #logit(p1[i]) <- alpha + inprod(X[i,],beta[])
-  }
-  
-  # Priors
-  for(j in 1:3){
-    beta[j] ~ dnorm(0,0.001)
-  }
-  alpha ~ dnorm(0,0.001)
-  
-  }")
-#load the data and compile the MCMC code
-model3 <- jags.model(model_string3, data = data3, n.chains = 2, quiet = TRUE)
-#burn in for samples
-update(model3, 1000, progress.bar = "none")
-#Generate post-burn-in samples and retain parameters of interest
-samples3 <- coda.samples(model3, variable.names = c("Y", "beta"), thin = 5, n.iter = 3000, progress.bar = "none")
-
-#find mean for each prediction
-samps1 <- colMeans(samples1[[1]][, 1:n])
-samps2 <- colMeans(samples2[[1]][, 1:n])
-samps3 <- colMeans(samples3[[1]][, 1:n])
-#store means from 4 models in df
-df <- data.frame(samps1, samps2, samps3)
-#find the column with the maximum mean
-max_column <- colnames(df)[max.col(df, "first")]
-#classify based on column that had maximum mean
-pred <- if_else(max_column == "samps1", 1,
-                if_else(max_column == "samps2", 2, 3))
-#compare
-data.frame(Y, pred)
-```
 
 
 # Trying to figure out workaround besides dcat or dmulti to improve computation speed
 ```{r}
 #store data for JAGS
-data <- list(Y = Y, X = X, n = n, n_ = n_)
+data <- list(Y = Y1, X = X, n = n, n_ = n_)
 #define the model   
 model_string <- textConnection("model{
 
   # Likelihood
   for(i in 1:n) {
-    Y1[i] ~ dbern(p1[i])
-    Y2[i] ~ dbern(p2[i])
+    Y[i] ~ dbern(p1[i])
     
     p1[i] <- exp(alpha1 + inprod(X[i,],beta[])) / (1 + exp(alpha1 + inprod(X[i,],beta[])))
-    p2[i] <- (1 - p1[i]) * (exp(alpha2 + inprod(X[i,],gamma[])) / (1 + exp(alpha2 + inprod(X[i,],gamma[]))))
-    p3[i] <- 1 - (p1[i] + p2[i])
-  
+   
     #logit(p1[i]) <- alpha1 + inprod(X[i,],beta[])
+  }
+  
+  # Priors
+  for(j in 1:n_){
+    beta[j] ~ dnorm(0,100)
+    gamma[j] ~ dnorm(0,100)
+  }
+  alpha1 ~ dnorm(0,0.001)
+  alpha2 ~ dnorm(0,0.001)
+ 
+  }")
+#load the data and compile the MCMC code
+model <- jags.model(model_string, data = data, n.chains = 1, quiet = TRUE)
+#burn in for samples
+update(model, 5, progress.bar = "none")
+#Generate post-burn-in samples and retain parameters of interest c("p1", "p2", "p3")
+samples <- coda.samples(model, variable.names = c("p1"), n.iter = 10, progress.bar = "none")
+
+samples[, 1:2]
+samples[, 1924:1925]
+samples[, 3847:3848]
+```
+
+```{r}
+#store data for JAGS
+data <- list(Y = Y2, X = X, n = n, n_ = n_)
+#define the model   
+model_string <- textConnection("model{
+
+  # Likelihood
+  for(i in 1:n) {
+    Y[i] ~ dbern(p2[i])
+    
+    p2[i] <- (1 - exp(alpha1 + inprod(X[i,],beta[])) / (1 + exp(alpha1 + inprod(X[i,],beta[])))) * 
+  (exp(alpha2 + inprod(X[i,],gamma[])) / (1 + exp(alpha2 + inprod(X[i,],gamma[]))))
+    
+    #p3[i] <- 1 - (p1[i] + p2[i])
     #logit(p2[i]) <- alpha2 + inprod(X[i,],gamma[])
   }
   
@@ -240,14 +386,8 @@ model <- jags.model(model_string, data = data, n.chains = 1, quiet = TRUE)
 #burn in for samples
 update(model, 5, progress.bar = "none")
 #Generate post-burn-in samples and retain parameters of interest c("p1", "p2", "p3")
-samples <- coda.samples(model, variable.names = c("p1", "p2", "p3"), n.iter = 10, progress.bar = "none")
-
-samples[, 1:2]
-samples[, 1924:1925]
-samples[, 3847:3848]
+samples <- coda.samples(model, variable.names = c("p2"), n.iter = 10, progress.bar = "none")
 ```
-
-
 
 
 
