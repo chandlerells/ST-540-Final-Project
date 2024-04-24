@@ -35,26 +35,6 @@ train_data <- turtles[train_indices, ] %>% mutate(index = sample(c(rep(1, index_
                                                                    rep(2,index_count),
                                                                    rep(3, index_count))))
 
-# Create the testing sets
-test_data1 <- turtles1[-train_indices1, ]
-test_data2 <- turtles2[-train_indices2, ]
-test_data3 <- turtles3[-train_indices3, ]
-
-X_test1 <- test_data1 %>% select(-`Ending disposition`)
-X_test2 <- test_data2 %>% select(-`Ending disposition`)
-X_test3 <- test_data3 %>% select(-`Ending disposition`)
-
-Y_test1 <- as.numeric(factor(test_data1$`Ending disposition`))
-Y_test1 <- as.numeric(factor(test_data2$`Ending disposition`))
-Y_test1 <- as.numeric(factor(test_data3$`Ending disposition`))
-
-n_test1 <- length(Y_test1)
-n_test2 <- length(Y_test2)
-n_test3 <- length(Y_test3)
-
-N_test1 <- length(X_test1)
-N_test2 <- length(X_test2)
-N_test3 <- length(X_test3)
 ```
 
 # Cross Validation
@@ -134,9 +114,9 @@ for(i in 1:3){
   #load the data and compile the MCMC code
   model1 <- jags.model(model_string1, data = data1, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model1, 10, progress.bar = "none")
+  update(model1, 100, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples1 <- coda.samples(model1, variable.names = c("Y1", "beta", "gamma"), n.iter = 30, progress.bar = "none")[[1]]
+  samples1 <- coda.samples(model1, variable.names = c("Y1", "beta", "gamma"), n.iter = 300, progress.bar = "none")[[1]]
   #store predictions and find category classified the most in PPD for each prediction
   preds1 <- apply(samples1[, 1:N_test], MARGIN = 2, FUN = function(x){as.numeric(names(table(x))[which.max(table(x))])})
   
@@ -176,9 +156,9 @@ for(i in 1:3){
   #load the data and compile the MCMC code
   model2 <- jags.model(model_string2, data = data2, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model2, 10, progress.bar = "none")
+  update(model2, 100, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples2 <- coda.samples(model2, variable.names = c("Y1", "beta", "gamma1"), n.iter = 30, progress.bar = "none")[[1]]
+  samples2 <- coda.samples(model2, variable.names = c("Y1", "beta", "gamma1"), n.iter = 300, progress.bar = "none")[[1]]
   #store predictions and find category classified the most in PPD for each prediction
   preds2 <- apply(samples2[, 1:N_test], MARGIN = 2, FUN = function(x){as.numeric(names(table(x))[which.max(table(x))])})
   
@@ -219,9 +199,9 @@ for(i in 1:3){
   #load the data and compile the MCMC code
   model3 <- jags.model(model_string3, data = data3, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model3, 10, progress.bar = "none")
+  update(model3, 100, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples3 <- coda.samples(model3, variable.names = c("Y1", "beta", "gamma"), n.iter = 30, progress.bar = "none")[[1]]
+  samples3 <- coda.samples(model3, variable.names = c("Y1", "beta", "gamma"), n.iter = 300, progress.bar = "none")[[1]]
   #store predictions and find category classified the most in PPD for each prediction
   preds3 <- apply(samples3[, 1:N_test], MARGIN = 2, FUN = function(x){as.numeric(names(table(x))[which.max(table(x))])})
   
@@ -250,10 +230,7 @@ names(mod3_pred) <- c("one", "two", "three")
 #create vector of all prediction values
 mod3_pred <- c(mod3_pred$one, mod3_pred$two, mod3_pred$three)
 
-ordered <- train_data %>% arrange(index) %>% select(`Ending disposition`)
-ordered$`Ending disposition`[ordered$`Ending disposition` == 'Death'] <- 1
-ordered$`Ending disposition`[ordered$`Ending disposition` == 'Resleased'] <- 3
-ordered$`Ending disposition`[ordered$`Ending disposition` == 'Euthanized'] <- 2
+ordered <- train_data %>% arrange(index) %>% select(`Ending disposition`) %>% unlist() %>% as.factor() %>% as.numeric()
 
 #create data frame of response and predicted values
 preds <- data.frame(Outcome = ordered %>% unlist() %>% as.numeric(), 
@@ -268,25 +245,21 @@ data.frame(Accuracy = round(c(mean((preds$Outcome == preds$mod1_pred)),
                    mean((preds$Outcome == preds$mod2_pred)),
                    mean((preds$Outcome == preds$mod3_pred)),
                    mean((preds$Outcome == rep(majority, length(preds$Outcome))))), 3),
-           row.names = c("Model1", "Model2", "Model3","Benchmark"))
+           row.names = c("Model1", "Model2", "Model3", "Benchmark"))
 ```
 
 # Accuracy as Performance Metric
 ```{r}
 #store predictions and find category classified the most in PPD for each prediction
-preds <- apply(samples[[1]], MARGIN = 2, FUN = function(x){
-  as.numeric(names(table(x))[which.max(table(x))])
-})
+#preds <- apply(samples[[1]], MARGIN = 2, FUN = function(x){
+#  as.numeric(names(table(x))[which.max(table(x))])
+#})
 #calculate accuracy as performance metric
-(accuracy <- mean(Y == preds))
+#(accuracy <- mean(Y == preds))
 #see how model compares to benchmark that classifies everything as the majority class
-majority <- as.numeric(names(table(Y))[which.max(table(Y))])
-(baseline <- mean(Y == rep(majority, length(Y))))
+#majority <- as.numeric(names(table(Y))[which.max(table(Y))])
+#(baseline <- mean(Y == rep(majority, length(Y))))
 ```
-
-
-
-
 
 # Trying to figure out workaround besides dcat or dmulti to improve computation speed
 ```{r}
