@@ -114,9 +114,9 @@ for(i in 1:3){
   #load the data and compile the MCMC code
   model1 <- jags.model(model_string1, data = data1, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model1, 100, progress.bar = "none")
+  update(model1, 5000, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples1 <- coda.samples(model1, variable.names = c("Y1", "beta", "gamma"), n.iter = 300, progress.bar = "none")[[1]]
+  samples1 <- coda.samples(model1, variable.names = c("Y1", "beta", "gamma"), n.iter = 10000, progress.bar = "none")[[1]]
   #store predictions and find category classified the most in PPD for each prediction
   preds1 <- apply(samples1[, 1:N_test], MARGIN = 2, FUN = function(x){as.numeric(names(table(x))[which.max(table(x))])})
   
@@ -156,9 +156,9 @@ for(i in 1:3){
   #load the data and compile the MCMC code
   model2 <- jags.model(model_string2, data = data2, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model2, 100, progress.bar = "none")
+  update(model2, 5000, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples2 <- coda.samples(model2, variable.names = c("Y1", "beta", "gamma1"), n.iter = 300, progress.bar = "none")[[1]]
+  samples2 <- coda.samples(model2, variable.names = c("Y1", "beta", "gamma"), n.iter = 10000, progress.bar = "none")[[1]]
   #store predictions and find category classified the most in PPD for each prediction
   preds2 <- apply(samples2[, 1:N_test], MARGIN = 2, FUN = function(x){as.numeric(names(table(x))[which.max(table(x))])})
   
@@ -199,15 +199,22 @@ for(i in 1:3){
   #load the data and compile the MCMC code
   model3 <- jags.model(model_string3, data = data3, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model3, 100, progress.bar = "none")
+  update(model3, 5000, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples3 <- coda.samples(model3, variable.names = c("Y1", "beta", "gamma"), n.iter = 300, progress.bar = "none")[[1]]
+  samples3 <- coda.samples(model3, variable.names = c("Y1", "beta", "gamma"), n.iter = 10000, progress.bar = "none")[[1]]
   #store predictions and find category classified the most in PPD for each prediction
   preds3 <- apply(samples3[, 1:N_test], MARGIN = 2, FUN = function(x){as.numeric(names(table(x))[which.max(table(x))])})
   
   list3 <- append(list3, list(preds3))
 }
 ```
+
+```{r}
+effectiveSize(samples1[, (N_test + 1):(N_test + (n_train1 * 2))])
+effectiveSize(samples21[, (N_test + 1):(N_test + (n_train2 * 2))])
+effectiveSize(samples3[, (N_test + 1):(N_test + (n_train3 * 2))])
+```
+
 
 # Compare model predictions with Accuracy
 ```{r}
@@ -244,7 +251,7 @@ majority <- ifelse(majority_class == "Death", 1, ifelse(majority_class == "Resle
 data.frame(Accuracy = round(c(mean((preds$Outcome == preds$mod1_pred)), 
                    mean((preds$Outcome == preds$mod2_pred)),
                    mean((preds$Outcome == preds$mod3_pred)),
-                   mean((preds$Outcome == rep(majority, length(preds$Outcome))))), 3),
+                   mean((preds$Outcome == rep(majority, length(preds$Outcome))))), 5),
            row.names = c("Model1", "Model2", "Model3", "Benchmark"))
 ```
 
