@@ -311,7 +311,7 @@ data.frame(Accuracy = round(c(mean((preds$Outcome == preds$mod1_pred)),
            row.names = c("Model1", "Model2", "Model3", "Benchmark"))
 ```
 
-
+## Fit Best Model
 ```{r}
 #store training predictors for model 1
 X_train <- train_data %>% 
@@ -378,6 +378,7 @@ effectiveSize(samples[[1]][, (N_test + 1):(N_test + (n_train * 2))])
 gelman.diag(samples[, (N_test + 1):(N_test + (n_train * 2))])
 ```
 
+### Determine performance of best model
 ```{r}
 #see how model compares to benchmark that classifies everything as the majority class in test set
 majority_class <- names(table(test_data$`Ending disposition`))[which.max(table(test_data$`Ending disposition`))]
