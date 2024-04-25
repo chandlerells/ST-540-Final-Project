@@ -13,6 +13,7 @@ library(rjags)
 library(caret)
 ```
 
+## Read in Data
 ```{r}
 #read in data
 turtles <- read_excel("Turtles.xlsx") %>% 
@@ -22,7 +23,7 @@ turtles <- read_excel("Turtles.xlsx") %>%
 head(turtles)
 ```
 
-# Model Fit Using dcat()
+## Create training and test sets
 ```{r}
 #set the seed for reproducibility
 set.seed(123)
@@ -38,7 +39,7 @@ train_data <- turtles[train_indices, ] %>% mutate(index = sample(c(rep(1, index_
 test_data <- turtles[-train_indices, ]
 ```
 
-# Cross Validation
+## Perform 3 fold Cross-Validation
 ```{r}
 #create empty lists to posterior probabilities and max classifications for each observation in test set
 list1 <- list()
@@ -113,9 +114,9 @@ for(i in 1:3){
   #load the data and compile the MCMC code
   model1 <- jags.model(model_string1, data = data1, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model1, 5, progress.bar = "none")
+  update(model1, 5000, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples1 <- coda.samples(model1, variable.names = c("p1", "beta", "gamma", "Y1"), n.iter = 10, progress.bar = "none")[[1]]
+  samples1 <- coda.samples(model1, variable.names = c("p1", "beta", "gamma", "Y1"), n.iter = 10000, progress.bar = "none")[[1]]
   #calculate PPD means for each of the 3 probabilities for each prediction
   prob_mean1 <- colMeans(samples1[, (N_test+(n_train1*2)+1): (N_test+(n_train1*2)+(N_test*3))])
   #append to list
@@ -161,9 +162,9 @@ for(i in 1:3){
   #load the data and compile the MCMC code
   model2 <- jags.model(model_string2, data = data2, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model2, 5, progress.bar = "none")
+  update(model2, 5000, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples2 <- coda.samples(model2, variable.names = c("p1", "beta", "gamma", "Y1"), n.iter = 10, progress.bar = "none")[[1]]
+  samples2 <- coda.samples(model2, variable.names = c("p1", "beta", "gamma", "Y1"), n.iter = 10000, progress.bar = "none")[[1]]
   #calculate PPD means for each of the 3 probabilities for each prediction
   prob_mean2 <- colMeans(samples2[, (N_test+(n_train2*2)+1): (N_test+(n_train2*2)+(N_test*3))])
   #append to list
@@ -209,9 +210,9 @@ for(i in 1:3){
   #load the data and compile the MCMC code
   model3 <- jags.model(model_string3, data = data3, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model3, 50, progress.bar = "none")
+  update(model3, 5000, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples3 <- coda.samples(model3, variable.names = c("p1", "beta", "gamma", "Y1"), n.iter = 10, progress.bar = "none")[[1]]
+  samples3 <- coda.samples(model3, variable.names = c("p1", "beta", "gamma", "Y1"), n.iter = 10000, progress.bar = "none")[[1]]
   #calculate PPD means for each of the 3 probabilities for each prediction
   prob_mean3 <- colMeans(samples3[, (N_test+(n_train3*2)+1): (N_test+(n_train3*2)+(N_test*3))])
   #append to list
@@ -224,37 +225,40 @@ for(i in 1:3){
 }
 ```
 
+## Check convergence
 ```{r}
+#check convergence of each model by checking effective sample size of last fold
 effectiveSize(samples1[, (N_test + 1):(N_test + (n_train1 * 2))])
 effectiveSize(samples2[, (N_test + 1):(N_test + (n_train2 * 2))])
 effectiveSize(samples3[, (N_test + 1):(N_test + (n_train3 * 2))])
 ```
-
+## Determine best model using probabilities
 ```{r}
-# Function to split a vector into three equal parts
+#function to split a vector into three equal parts
 split_vector <- function(vec) {
   n <- length(vec)
   n_per_col <- ceiling(n / 3)
   as.data.frame(matrix(vec, ncol = 3))
 }
-# Apply the function to each element of the list
+#apply the function to each element of the lists
 df_list1 <- lapply(list1, split_vector)
 df_list2 <- lapply(list2, split_vector)
 df_list3 <- lapply(list3, split_vector)
-# Combine the data frames by column
+#combine the data frames by column
 combined_df1 <- do.call(cbind, df_list1)
 combined_df2 <- do.call(cbind, df_list2)
 combined_df3 <- do.call(cbind, df_list3)
+#create appropriate names for each data frame
 names(combined_df1) <- c("Mod1_p1", "Mod1_p2", "Mod1_p3", "Mod2_p1", "Mod2_p2", "Mod2_p3", "Mod3_p1", "Mod3_p2", "Mod3_p3")
 names(combined_df2) <- c("Mod1_p1", "Mod1_p2", "Mod1_p3", "Mod2_p1", "Mod2_p2", "Mod2_p3", "Mod3_p1", "Mod3_p2", "Mod3_p3")
 names(combined_df3) <- c("Mod1_p1", "Mod1_p2", "Mod1_p3", "Mod2_p1", "Mod2_p2", "Mod2_p3", "Mod3_p1", "Mod3_p2", "Mod3_p3")
-
+#store all probabilities from each model for each prediction
 preds <- rbind(combined_df1, combined_df2, combined_df3)
-
+#create proper order of response to compare to each model as sample was used to randomize the index for cv
 ordered <- train_data %>% arrange(index) %>% select(`Ending disposition`) %>% unlist() %>% as.factor() %>% as.numeric()
-
+#add response appropriately ordered to preds data frame
 preds$Outcome <-ordered %>% unlist() %>% as.numeric()
-
+#in order to determine which model performed the best, only retain probabilities from each model associated with correct category
 values <- apply(preds, MARGIN = 1, FUN = function(x){
   if (x[10] == 1) {
     list(mod1 = x[1], mod2 = x[4], mod3 = x[7])
@@ -264,15 +268,14 @@ values <- apply(preds, MARGIN = 1, FUN = function(x){
     list(mod1 = x[3], mod2 = x[6], mod3 = x[9])
   }
 })
-
+#bind the rows so that there's only columns corresponding to each model and the outcome
 filtered_preds <- bind_rows(values) %>% mutate(Outcome = preds$Outcome)
-
+#create new column that says which model had the highest probability corresponding to correct outcome
 filtered_preds <-  filtered_preds %>% mutate(best = colnames(filtered_preds)[max.col(filtered_preds[, 1:3], "first")])
-
+#determine which model performed the best by looking at proportion of times each model was closest to correct outcome
 round(table(filtered_preds$best)/sum(table(filtered_preds$best)), 3)
-
 ```
-
+## Determine performance of best model
 ```{r}
 #combine predictions from each fold in list into tibble
 mod1_pred <- bind_cols(list5)
@@ -292,16 +295,15 @@ mod3_pred <- bind_cols(list7)
 names(mod3_pred) <- c("one", "two", "three")
 #create vector of all prediction values
 mod3_pred <- c(mod3_pred$one, mod3_pred$two, mod3_pred$three)
-
-#create data frame of response and predicted values
+#create data frame of response and predicted values from each model
 preds <- data.frame(Outcome = ordered %>% unlist() %>% as.numeric(), 
                     mod1_pred, 
                     mod2_pred, 
                     mod3_pred)
-#see how model compares to benchmark that classifies everything as the majority class
+#see how models compares to benchmark that classifies everything as the majority class
 majority_class <- names(table(train_data$`Ending disposition`))[which.max(table(train_data$`Ending disposition`))]
 majority <- ifelse(majority_class == "Death", 1, ifelse(majority_class == "Released", 3, 2))
-
+#create data frame of accuracy for each model and using the benchmark
 data.frame(Accuracy = round(c(mean((preds$Outcome == preds$mod1_pred)), 
                    mean((preds$Outcome == preds$mod2_pred)),
                    mean((preds$Outcome == preds$mod3_pred)),
@@ -309,125 +311,7 @@ data.frame(Accuracy = round(c(mean((preds$Outcome == preds$mod1_pred)),
            row.names = c("Model1", "Model2", "Model3", "Benchmark"))
 ```
 
-# Accuracy as Performance Metric
-```{r}
-#store predictions and find category classified the most in PPD for each prediction
-#preds <- apply(samples[[1]], MARGIN = 2, FUN = function(x){
- # as.numeric(names(table(x))[which.max(table(x))])
-#})
-#calculate accuracy as performance metric
-#(accuracy <- mean(Y == preds))
-#see how model compares to benchmark that classifies everything as the majority class
-#majority <- as.numeric(names(table(Y))[which.max(table(Y))])
-#(baseline <- mean(Y == rep(majority, length(Y))))
-```
 
-# Trying to figure out workaround besides dcat or dmulti to improve computation speed
-```{r}
-#store data for JAGS
-data <- list(Y = Y1, X = X, n = n, n_ = n_)
-#define the model   
-model_string <- textConnection("model{
-
-  # Likelihood
-  for(i in 1:n) {
-    Y[i] ~ dbern(p1[i])
-    
-    p1[i] <- exp(alpha1 + inprod(X[i,],beta[])) / (1 + exp(alpha1 + inprod(X[i,],beta[])))
-   
-    #logit(p1[i]) <- alpha1 + inprod(X[i,],beta[])
-  }
-  
-  # Priors
-  for(j in 1:n_){
-    beta[j] ~ dnorm(0,100)
-    gamma[j] ~ dnorm(0,100)
-  }
-  alpha1 ~ dnorm(0,0.001)
-  alpha2 ~ dnorm(0,0.001)
- 
-  }")
-#load the data and compile the MCMC code
-model <- jags.model(model_string, data = data, n.chains = 1, quiet = TRUE)
-#burn in for samples
-update(model, 5, progress.bar = "none")
-#Generate post-burn-in samples and retain parameters of interest c("p1", "p2", "p3")
-samples <- coda.samples(model, variable.names = c("p1"), n.iter = 10, progress.bar = "none")
-
-samples[, 1:2]
-samples[, 1924:1925]
-samples[, 3847:3848]
-```
-
-```{r}
-#store data for JAGS
-data <- list(Y = Y2, X = X, n = n, n_ = n_)
-#define the model   
-model_string <- textConnection("model{
-
-  # Likelihood
-  for(i in 1:n) {
-    Y[i] ~ dbern(p2[i])
-    
-    p2[i] <- (1 - exp(alpha1 + inprod(X[i,],beta[])) / (1 + exp(alpha1 + inprod(X[i,],beta[])))) * 
-  (exp(alpha2 + inprod(X[i,],gamma[])) / (1 + exp(alpha2 + inprod(X[i,],gamma[]))))
-    
-    #p3[i] <- 1 - (p1[i] + p2[i])
-    #logit(p2[i]) <- alpha2 + inprod(X[i,],gamma[])
-  }
-  
-  # Priors
-  for(j in 1:n_){
-    beta[j] ~ dnorm(0,100)
-    gamma[j] ~ dnorm(0,100)
-  }
-  alpha1 ~ dnorm(0,0.001)
-  alpha2 ~ dnorm(0,0.001)
- 
-  }")
-#load the data and compile the MCMC code
-model <- jags.model(model_string, data = data, n.chains = 1, quiet = TRUE)
-#burn in for samples
-update(model, 5, progress.bar = "none")
-#Generate post-burn-in samples and retain parameters of interest c("p1", "p2", "p3")
-samples <- coda.samples(model, variable.names = c("p2"), n.iter = 10, progress.bar = "none")
-```
-
-```{r}
-  #store data for JAGS
-  data4   <- list(Y = as.numeric(factor(train_data$`Ending disposition`)), 
-                  X1 = train_data %>% select(Head, Neurologic, Respiratory, CoeolomicBreach, Eye, Abscess, Shell, Extremity), 
-                  n1 = length(as.numeric(factor(train_data$`Ending disposition`))), 
-                  n3 = 8)
-  #define the model
-  model_string4 <- textConnection("model{
-                                  
-     # Likelihood
-     for(i in 1:n1) {
-       Y[i] ~ dcat(p[i, ])
-       denom[i] <- 1 + exp(alpha1 + inprod(X1[i,], beta[])) + exp(alpha2 + inprod(X1[i,], gamma[])) 
-       p[i, 1] <- 1 / denom[i]
-       p[i, 2] <- exp(alpha1 + inprod(X1[i,], beta[])) / denom[i]
-       p[i, 3] <- exp(alpha2 + inprod(X1[i,], gamma[])) / denom[i]
-     }
-     
-     # Priors
-     for(j in 1:n3){
-       beta[j] ~ dnorm(0, 100)
-       gamma[j] ~ dnorm(0, 100)
-     }
-     alpha1 ~ dnorm(0, 100)
-     alpha2 ~ dnorm(0, 100)
-  
-  }")
-
-  #load the data and compile the MCMC code
-  model4 <- jags.model(model_string4, data = data4, n.chains = 1, quiet = TRUE)
-  #burn in for samples
-  update(model4, 5, progress.bar = "none")
-  #Generate post-burn-in samples and retain parameters of interest
-  samples4 <- coda.samples(model4, variable.names = c("p", "beta", "gamma"), n.iter = 10, progress.bar = "none")[[1]]
-```
 
 
 
