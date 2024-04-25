@@ -312,6 +312,78 @@ data.frame(Accuracy = round(c(mean((preds$Outcome == preds$mod1_pred)),
 ```
 
 
+```{r}
+#store training predictors for model 1
+X_train <- train_data %>% 
+  select(Head, Neurologic, Respiratory, CoeolomicBreach, Eye, Abscess, Shell, Extremity)
+#store test predictors for model 1
+X_test <- test_data %>% 
+  select(Head, Neurologic, Respiratory, CoeolomicBreach, Eye, Abscess, Shell, Extremity)
+#store proper response data for model fitting and prediction
+Y_train <- as.numeric(factor(train_data$`Ending disposition`))
+Y_test <- as.numeric(factor(test_data$`Ending disposition`))
+#store appropriate lengths and number of predictors
+N_train <- length(Y_train)
+N_test <- length(Y_test )
+n_train <- length(X_train)
 
+#store data for JAGS
+data  <- list(Y = Y_train, X1 = X_train, X2 = X_test, n1 = N_train, n2 = N_test, n3 = n_train)
+#define the model
+model_string <- textConnection("model{
+                                  
+  # Likelihood
+  for(i in 1:n1) {
+    Y[i] ~ dcat(p[i, ])
+    denom[i] <- 1 + exp(alpha1 + inprod(X1[i,], beta[])) + exp(alpha2 + inprod(X1[i,], gamma[])) 
+    p[i, 1] <- 1 / denom[i]
+    p[i, 2] <- exp(alpha1 + inprod(X1[i,], beta[])) / denom[i]
+    p[i, 3] <- exp(alpha2 + inprod(X1[i,], gamma[])) / denom[i]
+    }
+     
+  # Prediction
+  for(i in 1:n2) {
+    Y1[i] ~ dcat(p1[i, ])
+    denom1[i] <- 1 + exp(alpha1 + inprod(X2[i,], beta[])) + exp(alpha2 + inprod(X2[i,], gamma[])) 
+    p1[i, 1] <- 1 / denom1[i]
+    p1[i, 2] <- exp(alpha1 + inprod(X2[i,], beta[])) / denom1[i]
+    p1[i, 3] <- exp(alpha2 + inprod(X2[i,], gamma[])) / denom1[i]
+    }
+     
+  # Priors
+  for(j in 1:n3){
+    beta[j] ~ dnorm(0, 100)
+    gamma[j] ~ dnorm(0, 100)
+  }
+  alpha1 ~ dnorm(0, 100)
+  alpha2 ~ dnorm(0, 100)
+  
+  }")
+#load the data and compile the MCMC code
+model <- jags.model(model_string, data = data, n.chains = 2, quiet = TRUE)
+#burn in for samples
+update(model, 5000, progress.bar = "none")
+#Generate post-burn-in samples and retain parameters of interest
+samples <- coda.samples(model, variable.names = c("p1", "beta", "gamma", "Y1"), n.iter = 10000, progress.bar = "none")
+#calculate PPD means for each of the 3 probabilities for each prediction
+prob_mean <- colMeans(samples[[1]][, (N_test+(n_train*2)+1): (N_test+(n_train*2)+(N_test*3))])
+#determine the category classified the most frequently for each prediction
+preds <- apply(samples[[1]][, 1:N_test], MARGIN = 2, FUN = function(x){
+    as.numeric(names(table(x))[which.max(table(x))])})
+```
 
+```{r}
+#check convergence 
+effectiveSize(samples[[1]][, (N_test + 1):(N_test + (n_train * 2))])
+gelman.diag(samples[, (N_test + 1):(N_test + (n_train * 2))])
+```
+
+```{r}
+#see how model compares to benchmark that classifies everything as the majority class in test set
+majority_class <- names(table(test_data$`Ending disposition`))[which.max(table(test_data$`Ending disposition`))]
+majority <- ifelse(majority_class == "Death", 1, ifelse(majority_class == "Released", 3, 2))
+#create data frame of accuracy for  model and benchmark
+round(data.frame(Accuracy = c(mean(Y_test == preds), mean(Y_test == rep(majority, length(Y_test)))),
+           row.names = c("Mod1", "Benchmark")),4)
+```
 
