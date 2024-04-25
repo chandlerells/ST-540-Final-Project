@@ -24,56 +24,56 @@ head(turtles)
 
 # Model Fit Using dcat()
 ```{r}
-# Set the seed for reproducibility
+#set the seed for reproducibility
 set.seed(123)
-# Create a vector containing the row indices for the training sets
+#create a vector containing the row indices for the training set
 train_indices <- createDataPartition(turtles$`Ending disposition`, p = 0.8, list = FALSE)
-
+#create number of repetitions for each number in 3 fold cross validation
 index_count <- round(length(train_indices)/3, 0)
-# Create the training sets
+#create the training set
 train_data <- turtles[train_indices, ] %>% mutate(index = sample(c(rep(1, index_count),
                                                                    rep(2,index_count),
                                                                    rep(3, index_count))))
-cor(train_data[,2:9])
+#create test set
+test_data <- turtles[-train_indices, ]
 ```
 
 # Cross Validation
 ```{r}
-#create empty lists to store posterior means for each prediction from each model and quantiles for mod1
+#create empty lists to posterior probabilities and max classifications for each observation in test set
 list1 <- list()
 list2 <- list()
 list3 <- list()
-
+list5 <- list()
+list6 <- list()
+list7 <- list()
 #create loop for cross validation where each time through the loop, the models are fit on the folds 
 #not equal to the current index value and predictions are made on the fold equal to the current index value
 for(i in 1:3){
-  #store proper predictor data for model fitting and prediction
+  #store training predictors for model 1
   X_train1_train <- train_data[train_data$index != i, ] %>% 
     select(Head, Neurologic, Respiratory, CoeolomicBreach, Eye, Abscess, Shell, Extremity)
-  
+  #store test predictors for model 1
   X_train1_test <- train_data[train_data$index == i, ] %>% 
     select(Head, Neurologic, Respiratory, CoeolomicBreach, Eye, Abscess, Shell, Extremity)
-  
+  #store training predictors for model 2
   X_train2_train <- train_data[train_data$index != i, ] %>% 
     select(Abscess2, HBC2, Infection2, OtherTrauma2, UnknownFracture2)
-  
+  #store test predictors for model 2
   X_train2_test <- train_data[train_data$index == i, ] %>% 
     select(Abscess2, HBC2, Infection2, OtherTrauma2, UnknownFracture2)
-  
+  #store training predictors for model 3
   X_train3_train <- train_data[train_data$index != i, ] %>% 
     select(Abscess3, Infection3, Trauma3)
-  
+  #store test predictors for model 3
   X_train3_test <- train_data[train_data$index == i, ] %>% 
     select(Abscess3, Infection3, Trauma3)
-
   #store proper response data for model fitting and prediction
   Y_train_train <- as.numeric(factor(train_data[train_data$index != i, 1]$`Ending disposition`))
   Y_train_test <- as.numeric(factor(train_data[train_data$index == i, 1]$`Ending disposition`))
-
   #store appropriate lengths and number of predictors
   N_train <- length(Y_train_train)
   N_test <- length(Y_train_test )
-
   n_train1 <- length(X_train1_train)
   n_train2 <- length(X_train2_train)
   n_train3 <- length(X_train3_train)
@@ -110,17 +110,22 @@ for(i in 1:3){
      alpha2 ~ dnorm(0, 100)
   
   }")
-
   #load the data and compile the MCMC code
   model1 <- jags.model(model_string1, data = data1, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model1, 5000, progress.bar = "none")
+  update(model1, 5, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples1 <- coda.samples(model1, variable.names = c("Y1", "beta", "gamma"), n.iter = 10000, progress.bar = "none")[[1]]
-  #store predictions and find category classified the most in PPD for each prediction
-  preds1 <- apply(samples1[, 1:N_test], MARGIN = 2, FUN = function(x){as.numeric(names(table(x))[which.max(table(x))])})
+  samples1 <- coda.samples(model1, variable.names = c("p1", "beta", "gamma", "Y1"), n.iter = 10, progress.bar = "none")[[1]]
+  #calculate PPD means for each of the 3 probabilities for each prediction
+  prob_mean1 <- colMeans(samples1[, (N_test+(n_train1*2)+1): (N_test+(n_train1*2)+(N_test*3))])
+  #append to list
+  list1 <- append(list1, list(prob_mean1))
+  #determine the category classified the most frequently for each prediction
+  preds1 <- apply(samples1[, 1:N_test], MARGIN = 2, FUN = function(x){
+    as.numeric(names(table(x))[which.max(table(x))])})
+  #append to list
+  list5 <- append(list5, list(preds1))
   
-  list1 <- append(list1, list(preds1))
   #store data for JAGS
   data2   <- list(Y = Y_train_train, X1 = X_train2_train, X2 = X_train2_test, n1 = N_train, n2 = N_test, n3 = n_train2)
   #define the model
@@ -156,13 +161,18 @@ for(i in 1:3){
   #load the data and compile the MCMC code
   model2 <- jags.model(model_string2, data = data2, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model2, 5000, progress.bar = "none")
+  update(model2, 5, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples2 <- coda.samples(model2, variable.names = c("Y1", "beta", "gamma"), n.iter = 10000, progress.bar = "none")[[1]]
-  #store predictions and find category classified the most in PPD for each prediction
-  preds2 <- apply(samples2[, 1:N_test], MARGIN = 2, FUN = function(x){as.numeric(names(table(x))[which.max(table(x))])})
-  
-  list2 <- append(list2, list(preds2))
+  samples2 <- coda.samples(model2, variable.names = c("p1", "beta", "gamma", "Y1"), n.iter = 10, progress.bar = "none")[[1]]
+  #calculate PPD means for each of the 3 probabilities for each prediction
+  prob_mean2 <- colMeans(samples2[, (N_test+(n_train2*2)+1): (N_test+(n_train2*2)+(N_test*3))])
+  #append to list
+  list2 <- append(list2, list(prob_mean2))
+  #determine the category classified the most frequently for each prediction
+  preds2 <- apply(samples2[, 1:N_test], MARGIN = 2, FUN = function(x){
+    as.numeric(names(table(x))[which.max(table(x))])})
+  #append to list
+  list6 <- append(list6, list(preds2))
   
   #store data for JAGS
   data3   <- list(Y = Y_train_train, X1 = X_train3_train, X2 = X_train3_test, n1 = N_train, n2 = N_test, n3 = n_train3)
@@ -199,47 +209,89 @@ for(i in 1:3){
   #load the data and compile the MCMC code
   model3 <- jags.model(model_string3, data = data3, n.chains = 1, quiet = TRUE)
   #burn in for samples
-  update(model3, 5000, progress.bar = "none")
+  update(model3, 50, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples3 <- coda.samples(model3, variable.names = c("Y1", "beta", "gamma"), n.iter = 10000, progress.bar = "none")[[1]]
-  #store predictions and find category classified the most in PPD for each prediction
-  preds3 <- apply(samples3[, 1:N_test], MARGIN = 2, FUN = function(x){as.numeric(names(table(x))[which.max(table(x))])})
-  
-  list3 <- append(list3, list(preds3))
+  samples3 <- coda.samples(model3, variable.names = c("p1", "beta", "gamma", "Y1"), n.iter = 10, progress.bar = "none")[[1]]
+  #calculate PPD means for each of the 3 probabilities for each prediction
+  prob_mean3 <- colMeans(samples3[, (N_test+(n_train3*2)+1): (N_test+(n_train3*2)+(N_test*3))])
+  #append to list
+  list3 <- append(list3, list(prob_mean3))
+  #determine the category classified the most frequently for each prediction
+  preds3 <- apply(samples3[, 1:N_test], MARGIN = 2, FUN = function(x){
+    as.numeric(names(table(x))[which.max(table(x))])})
+  #append to list
+  list7 <- append(list7, list(preds3))
 }
 ```
 
 ```{r}
 effectiveSize(samples1[, (N_test + 1):(N_test + (n_train1 * 2))])
-effectiveSize(samples21[, (N_test + 1):(N_test + (n_train2 * 2))])
+effectiveSize(samples2[, (N_test + 1):(N_test + (n_train2 * 2))])
 effectiveSize(samples3[, (N_test + 1):(N_test + (n_train3 * 2))])
-
-summary(samples1[, (N_test + 1):(N_test + (n_train1 * 2))])
 ```
 
+```{r}
+# Function to split a vector into three equal parts
+split_vector <- function(vec) {
+  n <- length(vec)
+  n_per_col <- ceiling(n / 3)
+  as.data.frame(matrix(vec, ncol = 3))
+}
+# Apply the function to each element of the list
+df_list1 <- lapply(list1, split_vector)
+df_list2 <- lapply(list2, split_vector)
+df_list3 <- lapply(list3, split_vector)
+# Combine the data frames by column
+combined_df1 <- do.call(cbind, df_list1)
+combined_df2 <- do.call(cbind, df_list2)
+combined_df3 <- do.call(cbind, df_list3)
+names(combined_df1) <- c("Mod1_p1", "Mod1_p2", "Mod1_p3", "Mod2_p1", "Mod2_p2", "Mod2_p3", "Mod3_p1", "Mod3_p2", "Mod3_p3")
+names(combined_df2) <- c("Mod1_p1", "Mod1_p2", "Mod1_p3", "Mod2_p1", "Mod2_p2", "Mod2_p3", "Mod3_p1", "Mod3_p2", "Mod3_p3")
+names(combined_df3) <- c("Mod1_p1", "Mod1_p2", "Mod1_p3", "Mod2_p1", "Mod2_p2", "Mod2_p3", "Mod3_p1", "Mod3_p2", "Mod3_p3")
 
-# Compare model predictions with Accuracy
+preds <- rbind(combined_df1, combined_df2, combined_df3)
+
+ordered <- train_data %>% arrange(index) %>% select(`Ending disposition`) %>% unlist() %>% as.factor() %>% as.numeric()
+
+preds$Outcome <-ordered %>% unlist() %>% as.numeric()
+
+values <- apply(preds, MARGIN = 1, FUN = function(x){
+  if (x[10] == 1) {
+    list(mod1 = x[1], mod2 = x[4], mod3 = x[7])
+  } else if (x[10] == 2) {
+    list(mod1 = x[2], mod2 = x[5], mod3 = x[8])
+  } else {
+    list(mod1 = x[3], mod2 = x[6], mod3 = x[9])
+  }
+})
+
+filtered_preds <- bind_rows(values) %>% mutate(Outcome = preds$Outcome)
+
+filtered_preds <-  filtered_preds %>% mutate(best = colnames(filtered_preds)[max.col(filtered_preds[, 1:3], "first")])
+
+round(table(filtered_preds$best)/sum(table(filtered_preds$best)), 3)
+
+```
+
 ```{r}
 #combine predictions from each fold in list into tibble
-mod1_pred <- bind_cols(list1)
+mod1_pred <- bind_cols(list5)
 #create appropriate names for each column
 names(mod1_pred) <- c("one", "two", "three")
 #create vector of all prediction values
 mod1_pred <- c(mod1_pred$one, mod1_pred$two, mod1_pred$three)
 #combine predictions from each fold in list into tibble
-mod2_pred <- bind_cols(list2)
+mod2_pred <- bind_cols(list6)
 #create appropriate names for each column
 names(mod2_pred) <- c("one", "two", "three")
 #create vector of all prediction values
 mod2_pred <- c(mod2_pred$one, mod2_pred$two, mod2_pred$three)
 #combine predictions from each fold in list into tibble
-mod3_pred <- bind_cols(list3)
+mod3_pred <- bind_cols(list7)
 #create appropriate names for each column
 names(mod3_pred) <- c("one", "two", "three")
 #create vector of all prediction values
 mod3_pred <- c(mod3_pred$one, mod3_pred$two, mod3_pred$three)
-
-ordered <- train_data %>% arrange(index) %>% select(`Ending disposition`) %>% unlist() %>% as.factor() %>% as.numeric()
 
 #create data frame of response and predicted values
 preds <- data.frame(Outcome = ordered %>% unlist() %>% as.numeric(), 
@@ -248,7 +300,7 @@ preds <- data.frame(Outcome = ordered %>% unlist() %>% as.numeric(),
                     mod3_pred)
 #see how model compares to benchmark that classifies everything as the majority class
 majority_class <- names(table(train_data$`Ending disposition`))[which.max(table(train_data$`Ending disposition`))]
-majority <- ifelse(majority_class == "Death", 1, ifelse(majority_class == "Resleased", 3, 2))
+majority <- ifelse(majority_class == "Death", 1, ifelse(majority_class == "Released", 3, 2))
 
 data.frame(Accuracy = round(c(mean((preds$Outcome == preds$mod1_pred)), 
                    mean((preds$Outcome == preds$mod2_pred)),
@@ -261,7 +313,7 @@ data.frame(Accuracy = round(c(mean((preds$Outcome == preds$mod1_pred)),
 ```{r}
 #store predictions and find category classified the most in PPD for each prediction
 #preds <- apply(samples[[1]], MARGIN = 2, FUN = function(x){
-#  as.numeric(names(table(x))[which.max(table(x))])
+ # as.numeric(names(table(x))[which.max(table(x))])
 #})
 #calculate accuracy as performance metric
 #(accuracy <- mean(Y == preds))
@@ -374,13 +426,8 @@ samples <- coda.samples(model, variable.names = c("p2"), n.iter = 10, progress.b
   #burn in for samples
   update(model4, 5, progress.bar = "none")
   #Generate post-burn-in samples and retain parameters of interest
-  samples4 <- coda.samples(model4, variable.names = c("p"), n.iter = 10, progress.bar = "none")[[1]]
+  samples4 <- coda.samples(model4, variable.names = c("p", "beta", "gamma"), n.iter = 10, progress.bar = "none")[[1]]
 ```
 
-```{r}
-samples4[,1:2]
-samples4[,1753:1754]
-samples4[,3505:3506]
-```
 
 
