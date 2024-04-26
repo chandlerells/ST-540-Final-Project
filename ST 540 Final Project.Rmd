@@ -377,6 +377,8 @@ preds <- apply(samples[[1]][, 1:N_test], MARGIN = 2, FUN = function(x){
 #check convergence 
 effectiveSize(samples[[1]][, (N_test + 1):(N_test + (n_train * 2))])
 gelman.diag(samples[, (N_test + 1):(N_test + (n_train * 2))])
+#analyze summary
+summary(samples[[1]][, (N_test + 1):(N_test + (n_train * 2))])
 ```
 
 ### Determine performance of best model
@@ -388,6 +390,7 @@ majority <- ifelse(majority_class == "Death", 1, ifelse(majority_class == "Relea
 round(data.frame(Accuracy = c(mean(Y_test == preds), mean(Y_test == rep(majority, length(Y_test)))),
            row.names = c("Mod1", "Benchmark")),4)
 ```
+
 
 ```{r}
 #store probabilities for first observation
