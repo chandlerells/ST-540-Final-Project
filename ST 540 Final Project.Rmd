@@ -388,3 +388,59 @@ round(data.frame(Accuracy = c(mean(Y_test == preds), mean(Y_test == rep(majority
            row.names = c("Mod1", "Benchmark")),4)
 ```
 
+```{r}
+#store probabilities for first observation
+p1_1 <- samples[[1]][, (N_test + (n_train*2) + 1)]
+p1_2 <- samples[[1]][, ((N_test*2) + (n_train*2) + 1)]
+p1_3 <- samples[[1]][, ((N_test*3) + (n_train*2) + 1)]
+
+#create plot margins
+par(mar = c(4, 4, 0.2, 0.2), cex.axis= 1, cex.lab= 1.2)
+# Plot smoothed densities
+plot(density(p1_1), col = "blue", xlim = c(0.17,0.6), ylim = c(0, 30),
+     main = NA, xlab = "Probability", ylab = "Density")
+lines(density(p1_2), col = "red")
+lines(density(p1_3), col = "darkgreen")
+legend("topright", legend = c("Death", "Euthanized", "Released"),
+       col = c("blue", "red", "darkgreen"), lty = 1)
+# Add points for peak values and annotate them
+peak_values <- c(density(p1_1)$x[which.max(density(p1_1)$y)], 
+                 density(p1_2)$x[which.max(density(p1_2)$y)], 
+                 density(p1_3)$x[which.max(density(p1_3)$y)])
+peak_densities <- c(max(density(p1_1)$y), max(density(p1_2)$y), max(density(p1_3)$y))
+points(peak_values, peak_densities, col = "black", pch = 20)
+text(peak_values, peak_densities, labels = round(peak_values, 2), pos = 3)
+```
+
+
+```{r}
+# Sample data
+set.seed(123)
+vector1 <- rnorm(100, mean = 0, sd = 1)
+vector2 <- rnorm(100, mean = 1, sd = 1)
+vector3 <- rnorm(100, mean = 2, sd = 1)
+
+# Compute kernel density estimates
+density1 <- density(vector1)
+density2 <- density(vector2)
+density3 <- density(vector3)
+
+# Plot smoothed densities
+plot(density1, col = "blue", ylim = c(0, max(density1$y, density2$y, density3$y)),
+     main = "Smoothed Densities of Three Vectors", xlab = "Value", ylab = "Density")
+lines(density2, col = "red")
+lines(density3, col = "green")
+
+# Add points for peak values and annotate them
+peak_values <- c(density1$x[which.max(density1$y)], 
+                 density2$x[which.max(density2$y)], 
+                 density3$x[which.max(density3$y)])
+peak_densities <- c(max(density1$y), max(density2$y), max(density3$y))
+points(peak_values, peak_densities, col = "black", pch = 19)
+text(peak_values, peak_densities, labels = round(peak_values, 2), pos = 3)
+
+# Add legend
+legend("topright", legend = c("Vector 1", "Vector 2", "Vector 3", "Peak"),
+       col = c("blue", "red", "green", "black"), lty = c(1, 1, 1, NA), pch = c(NA, NA, NA, 19))
+```
+
